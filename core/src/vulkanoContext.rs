@@ -13,12 +13,14 @@ use vulkano_win::VkSurfaceBuild;
 use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
 use vulkano::image::attachment::AttachmentImage;
 use vulkano::sync::GpuFuture;
+use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 
 use std::sync::Arc;
 use std::iter;
 
 use crate::vulkanoWindowContext::VulkanoWindowContext;
 use crate::vulkanoSurfaceContext::VulkanoSurfaceContext;
+use crate::shaderLib::simple::SimpleVertex;
 
 use winit::{Window, WindowBuilder, EventsLoop};
 
@@ -43,7 +45,7 @@ pub struct VulkanoContext {
     // TODO: move valid structure
     graphics_pipeline: Arc<GraphicsPipelineAbstract + Send + Sync>,
     framebuffers: Vec<Arc<FramebufferAbstract + Send + Sync>>,
-    command_buffer: Vec<Arc<AutoCommandBuffer>>
+    command_buffers: Vec<Arc<AutoCommandBuffer>>
 }
 
 impl VulkanoContext {
@@ -70,7 +72,7 @@ impl VulkanoContext {
             render_pass,
             graphics_pipeline,
             framebuffers,
-            command_buffer: vec![]
+            command_buffers: vec![]
         };
         app.create_commandbuffer();
         app
@@ -135,8 +137,18 @@ impl VulkanoContext {
             }).collect::<Vec<_>>()
     }
 
+    fn build_commandbuffer(&mut self, buffer: &Arc<CpuAccessibleBuffer<[SimpleVertex]>>, image_num: usize) -> AutoCommandBuffer {
+        AutoCommandBufferBuilder::primary_one_time_submit(
+            self.device.clone(), self.queue.family()).unwrap()
+            .begin_render_pass(self.framebuffers[image_num], false,vec![[1.0, 1.0, 1.0, 1.0].into(), 1f32.into()])
+            .unwrap()
+            .draw(self.graphics_pipeline.clone(), &DynamicState::none(), buffer.clone(), (), ())
+            .unwrap()
+            .build().unwrap()
+    }
+
     fn create_commandbuffer(&mut self) {
-        self.command_buffer = self.framebuffers.iter().map(
+        self.command_buffers = self.framebuffers.iter().map(
             |framebuffer| {
                 let vertices = BufferlessVertices {vertices: 3, instances: 1};
                 Arc::new(AutoCommandBufferBuilder::primary_simultaneous_use(
@@ -159,14 +171,14 @@ impl VulkanoContext {
         mod vertex_shader {
             vulkano_shaders::shader! {
                ty: "vertex",
-               path: "../shaders/sample.vert"
+               path: "../shaders/simple.vert"
             }
         }
 
         mod fragment_shader {
             vulkano_shaders::shader! {
                 ty: "fragment",
-                path: "../shaders/sample.frag"
+                path: "../shaders/simple.frag"
             }
         }
 
