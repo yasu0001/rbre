@@ -44,7 +44,9 @@ pub struct VulkanoContext {
     // TODO: move valid structure
     graphics_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    framebuffer: Arc<dyn FramebufferAbstract + Send + Sync>,
     command_buffers: Vec<Arc<AutoCommandBuffer>>,
+    command_buffer: Option<AutoCommandBufferBuilder>,
     vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
 }
 
@@ -61,16 +63,15 @@ impl VulkanoContext {
         let render_pass = Self::create_renderpass(&device, surface_context.format());
         let graphics_pipeline = Self::create_graphics_pipeline(&device, surface_context.dimensions(), &render_pass);
         let framebuffers = Self::create_framebuffers(&device, surface_context.dimensions(), surface_context.images(), &render_pass);
+        let framebuffer = framebuffers[0].clone();
         let vertex = vec![
             SimpleVertex::init([0.0, 0.0, 1.0]),
             SimpleVertex::init([0.3, 0.1, 0.0]),
             SimpleVertex::init([0.3, 0.3, 0.0]),
-            SimpleVertex::init([-1.0, -0.5, 0.0]),
-            SimpleVertex::init([0.0, -1.0, 0.0]),
-            SimpleVertex::init([-0.5, -0.5, 0.0]),
             ];
         
         let vertex_buffer = Self::create_vertexbuffer(&device, vertex);
+        let command_buffer = Self::create_commandbuffer(&queue, &framebuffer);
         let mut app = VulkanoContext {
             instance,
             window_context,
@@ -82,10 +83,12 @@ impl VulkanoContext {
             render_pass,
             graphics_pipeline,
             framebuffers,
+            framebuffer,
             vertex_buffer,
+            command_buffer,
             command_buffers: vec![],
         };
-        app.create_commandbuffer();
+        app.create_commandbuffers();
         app
 
     }
@@ -154,7 +157,27 @@ impl VulkanoContext {
             }).collect::<Vec<_>>()
     }
 
-    fn create_commandbuffer(&mut self) {
+    fn create_command_buffer_self(&mut self) {
+        self.command_buffer = Self::create_commandbuffer(&self.queue, &self.framebuffer);
+    }
+
+    fn create_commandbuffer(queue: &Arc<Queue>, framebuffer: &Arc<dyn FramebufferAbstract + Send + Sync>) -> Option<AutoCommandBufferBuilder> {
+        Some(AutoCommandBufferBuilder::primary_one_time_submit(queue.device().clone(), 
+            queue.family()).unwrap()
+            .begin_render_pass(framebuffer.clone(), false, 
+                vec![[1.0, 1.0, 1.0, 1.0].into(), 1.0f32.into()]).unwrap())
+    }
+
+    fn draw_subpass(&mut self) -> AutoCommandBuffer{
+        AutoCommandBufferBuilder::secondary_graphics(
+            self.queue.device().clone(), self.queue.family(), self.graphics_pipeline.clone().subpass()).unwrap()
+            .draw(self.graphics_pipeline.clone(),&DynamicState::none(), 
+                vec![self.vertex_buffer.clone()], (), ())
+            .unwrap()
+            .build().unwrap()
+    }
+
+    fn create_commandbuffers(&mut self) {
         self.command_buffers = self.framebuffers.iter().map(
             |framebuffer| {
                 Arc::new(AutoCommandBufferBuilder::primary_simultaneous_use(
@@ -224,10 +247,21 @@ impl VulkanoContext {
 
     pub fn draw_frame(&mut self) {
         let (image_index, acquire_future) = self.surface_context.acquire_next_image();
-        let command_buffer = self.command_buffers[image_index].clone();
+        
+        self.framebuffer = self.framebuffers[image_index].clone();
+
+        self.create_command_buffer_self();
+
+        unsafe {
+            let command_buffer = self.draw_subpass();
+            self.command_buffer =Some(self.command_buffer.take().unwrap().execute_commands(command_buffer).unwrap());
+        }
+        let command_buffer = self.command_buffer.take().unwrap().end_render_pass().unwrap().build().unwrap();
         let queue = self.surface_context.queue();
+
+
         let future = acquire_future
-            .then_execute(queue.clone(), command_buffer).unwrap()
+            .then_execute(self.queue.clone(), command_buffer).unwrap()
             .then_swapchain_present(queue.clone(), self.surface_context.swapchain().clone(), image_index)
             .then_signal_fence_and_flush()
             .unwrap();
