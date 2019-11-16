@@ -1,29 +1,27 @@
 
 
-use vulkano::instance::{Instance, PhysicalDevice, RawInstanceExtensions, InstanceCreationError, InstanceExtensions};
+use vulkano::instance::{Instance, PhysicalDevice};
 use vulkano::device::{Device, DeviceExtensions, QueuesIter, Queue};
 use vulkano::format::Format;
-use vulkano::swapchain::{Surface, Swapchain, PresentMode, SurfaceTransform};
+use vulkano::swapchain::{Surface};
 use vulkano::image::{SwapchainImage};
 use vulkano::framebuffer::{RenderPassAbstract, FramebufferAbstract, Subpass, Framebuffer};
-use vulkano::swapchain;
 use vulkano::pipeline::{GraphicsPipelineAbstract, viewport::Viewport, GraphicsPipeline, 
-    vertex::BufferlessDefinition, vertex::BufferlessVertices};
-use vulkano_win::VkSurfaceBuild;
+    vertex::BufferlessVertices};
+
 use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
 use vulkano::image::attachment::AttachmentImage;
 use vulkano::sync::GpuFuture;
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, BufferAccess};
 
 use std::sync::Arc;
-use std::iter;
 
-use crate::vulkanoWindowContext::VulkanoWindowContext;
-use crate::vulkanoSurfaceContext::VulkanoSurfaceContext;
-use crate::shaderLib::simple::SimpleVertex;
+use crate::vulkano_window_context::VulkanoWindowContext;
+use crate::vulkano_surface_context::VulkanoSurfaceContext;
+use crate::shader_lib::simple::SimpleVertex;
 
 
-use winit::{Window, WindowBuilder, EventsLoop};
+use winit::{Window};
 
 pub struct VulkanoContext {
     instance: Arc<Instance>,
@@ -41,13 +39,13 @@ pub struct VulkanoContext {
     pub surface_context: VulkanoSurfaceContext,
 
     // renderpass
-    render_pass: Arc<RenderPassAbstract + Send + Sync>,
+    render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
 
     // TODO: move valid structure
-    graphics_pipeline: Arc<GraphicsPipelineAbstract + Send + Sync>,
-    framebuffers: Vec<Arc<FramebufferAbstract + Send + Sync>>,
+    graphics_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+    framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     command_buffers: Vec<Arc<AutoCommandBuffer>>,
-    vertex_buffer: Arc<BufferAccess + Send + Sync>,
+    vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
 }
 
 impl VulkanoContext {
@@ -63,7 +61,16 @@ impl VulkanoContext {
         let render_pass = Self::create_renderpass(&device, surface_context.format());
         let graphics_pipeline = Self::create_graphics_pipeline(&device, surface_context.dimensions(), &render_pass);
         let framebuffers = Self::create_framebuffers(&device, surface_context.dimensions(), surface_context.images(), &render_pass);
-        let vertex_buffer = Self::create_vertexbuffer(&device);
+        let vertex = vec![
+            SimpleVertex::init([0.0, 0.0, 1.0]),
+            SimpleVertex::init([0.3, 0.1, 0.0]),
+            SimpleVertex::init([0.3, 0.3, 0.0]),
+            SimpleVertex::init([-1.0, -0.5, 0.0]),
+            SimpleVertex::init([0.0, -1.0, 0.0]),
+            SimpleVertex::init([-0.5, -0.5, 0.0]),
+            ];
+        
+        let vertex_buffer = Self::create_vertexbuffer(&device, vertex);
         let mut app = VulkanoContext {
             instance,
             window_context,
@@ -102,7 +109,7 @@ impl VulkanoContext {
         Device::new(physical_device, &physical_device.supported_features(), &device_ext, [(queue_family, 0.5)].iter().cloned()).unwrap()
     }
  
-    fn create_renderpass(device: &Arc<Device>, color_format: Format) -> Arc<RenderPassAbstract + Send + Sync> {
+    fn create_renderpass(device: &Arc<Device>, color_format: Format) -> Arc<dyn RenderPassAbstract + Send + Sync> {
         Arc::new(vulkano::single_pass_renderpass!(
             device.clone(),
             attachments: {
@@ -126,15 +133,7 @@ impl VulkanoContext {
         ).unwrap())
     }
 
-    fn create_vertexbuffer(device: &Arc<Device>) -> Arc<BufferAccess + Send + Sync> {
-        let vertex = [
-            SimpleVertex::init([0.0, 0.0, 1.0]),
-            SimpleVertex::init([0.3, 0.1, 0.0]),
-            SimpleVertex::init([0.3, 0.3, 0.0]),
-            SimpleVertex::init([-1.0, -0.5, 0.0]),
-            SimpleVertex::init([0.0, -1.0, 0.0]),
-            SimpleVertex::init([-0.5, -0.5, 0.0]),
-            ];
+    fn create_vertexbuffer(device: &Arc<Device>, vertex:  Vec<SimpleVertex>) -> Arc<dyn BufferAccess + Send + Sync> {
         CpuAccessibleBuffer::from_iter(device.clone(), 
             BufferUsage::all(), 
             vertex.iter().cloned()).unwrap()
@@ -158,7 +157,6 @@ impl VulkanoContext {
     fn create_commandbuffer(&mut self) {
         self.command_buffers = self.framebuffers.iter().map(
             |framebuffer| {
-                let vertices = BufferlessVertices {vertices: 3, instances: 1};
                 Arc::new(AutoCommandBufferBuilder::primary_simultaneous_use(
                     self.device.clone(), self.queue.family()).unwrap()
                     .begin_render_pass(framebuffer.clone(), false, vec![[1.0, 1.0, 1.0, 1.0].into(), 1f32.into()])
@@ -175,8 +173,8 @@ impl VulkanoContext {
     fn create_graphics_pipeline(
         device: &Arc<Device>,
         swap_chain_extent: [u32; 2],
-        render_pass: &Arc<RenderPassAbstract + Send + Sync>,
-    ) -> Arc<GraphicsPipelineAbstract + Send + Sync> {
+        render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
+    ) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
         mod vertex_shader {
             vulkano_shaders::shader! {
                ty: "vertex",

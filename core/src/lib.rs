@@ -1,6 +1,5 @@
 
-pub mod vulkanoContext;
-pub mod vulkanoWindowContext;
-pub mod vulkanoCommandBuffer;
-pub mod vulkanoSurfaceContext;
-pub mod shaderLib;
+pub mod vulkano_context;
+pub mod vulkano_window_context;
+pub mod vulkano_surface_context;
+pub mod shader_lib;

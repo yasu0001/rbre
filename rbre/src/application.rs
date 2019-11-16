@@ -1,6 +1,8 @@
-use core::vulkanoContext::VulkanoContext;
+use core::vulkano_context::VulkanoContext;
 use std::time::Duration;
 use std::thread;
+
+use crate::object;
 
 pub struct Application {
     vc: VulkanoContext,
