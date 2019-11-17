@@ -19,7 +19,7 @@ use std::sync::Arc;
 use crate::vulkano_window_context::VulkanoWindowContext;
 use crate::vulkano_surface_context::VulkanoSurfaceContext;
 use crate::shader_lib::simple::SimpleVertex;
-
+use crate::draw_buffer::DrawBuffer;
 
 use winit::{Window};
 
@@ -42,12 +42,9 @@ pub struct VulkanoContext {
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
 
     // TODO: move valid structure
-    graphics_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     framebuffer: Arc<dyn FramebufferAbstract + Send + Sync>,
-    command_buffers: Vec<Arc<AutoCommandBuffer>>,
     command_buffer: Option<AutoCommandBufferBuilder>,
-    vertex_buffer: Arc<dyn BufferAccess + Send + Sync>,
 }
 
 impl VulkanoContext {
@@ -61,18 +58,10 @@ impl VulkanoContext {
         let queue = queues.next().unwrap();
         let surface_context = VulkanoSurfaceContext::initialize(&instance, &surface, physical_device_index, &device, &queue);
         let render_pass = Self::create_renderpass(&device, surface_context.format());
-        let graphics_pipeline = Self::create_graphics_pipeline(&device, surface_context.dimensions(), &render_pass);
         let framebuffers = Self::create_framebuffers(&device, surface_context.dimensions(), surface_context.images(), &render_pass);
         let framebuffer = framebuffers[0].clone();
-        let vertex = vec![
-            SimpleVertex::init([0.0, 0.0, 1.0]),
-            SimpleVertex::init([0.3, 0.1, 0.0]),
-            SimpleVertex::init([0.3, 0.3, 0.0]),
-            ];
-        
-        let vertex_buffer = Self::create_vertexbuffer(&device, vertex);
         let command_buffer = Self::create_commandbuffer(&queue, &framebuffer);
-        let mut app = VulkanoContext {
+        Self {
             instance,
             window_context,
             physical_device_index,
@@ -81,15 +70,10 @@ impl VulkanoContext {
             queue,
             surface_context,
             render_pass,
-            graphics_pipeline,
             framebuffers,
             framebuffer,
-            vertex_buffer,
             command_buffer,
-            command_buffers: vec![],
-        };
-        app.create_commandbuffers();
-        app
+        }
 
     }
     
@@ -136,12 +120,6 @@ impl VulkanoContext {
         ).unwrap())
     }
 
-    fn create_vertexbuffer(device: &Arc<Device>, vertex:  Vec<SimpleVertex>) -> Arc<dyn BufferAccess + Send + Sync> {
-        CpuAccessibleBuffer::from_iter(device.clone(), 
-            BufferUsage::all(), 
-            vertex.iter().cloned()).unwrap()
-    }
-
     fn create_framebuffers(device: &Arc<Device>, dimensions: [u32;2], images: &[Arc<SwapchainImage<Window>>],render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>) 
         ->  Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
             println!("Called here");
@@ -168,84 +146,7 @@ impl VulkanoContext {
                 vec![[1.0, 1.0, 1.0, 1.0].into(), 1.0f32.into()]).unwrap())
     }
 
-    fn draw_subpass(&mut self) -> AutoCommandBuffer{
-        AutoCommandBufferBuilder::secondary_graphics(
-            self.queue.device().clone(), self.queue.family(), self.graphics_pipeline.clone().subpass()).unwrap()
-            .draw(self.graphics_pipeline.clone(),&DynamicState::none(), 
-                vec![self.vertex_buffer.clone()], (), ())
-            .unwrap()
-            .build().unwrap()
-    }
-
-    fn create_commandbuffers(&mut self) {
-        self.command_buffers = self.framebuffers.iter().map(
-            |framebuffer| {
-                Arc::new(AutoCommandBufferBuilder::primary_simultaneous_use(
-                    self.device.clone(), self.queue.family()).unwrap()
-                    .begin_render_pass(framebuffer.clone(), false, vec![[1.0, 1.0, 1.0, 1.0].into(), 1f32.into()])
-                    .unwrap()
-                    .draw(self.graphics_pipeline.clone(),&DynamicState::none(), 
-                        vec![self.vertex_buffer.clone()], (), ())
-                    .unwrap()
-                    .end_render_pass()
-                    .unwrap()
-                    .build().unwrap())
-            }
-        ).collect();
-    }
-    fn create_graphics_pipeline(
-        device: &Arc<Device>,
-        swap_chain_extent: [u32; 2],
-        render_pass: &Arc<dyn RenderPassAbstract + Send + Sync>,
-    ) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
-        mod vertex_shader {
-            vulkano_shaders::shader! {
-               ty: "vertex",
-               path: "../shaders/simple.vert"
-            }
-        }
-
-        mod fragment_shader {
-            vulkano_shaders::shader! {
-                ty: "fragment",
-                path: "../shaders/simple.frag"
-            }
-        }
-
-        let vert_shader_module = vertex_shader::Shader::load(device.clone())
-            .expect("failed to create vertex shader module!");
-        let frag_shader_module = fragment_shader::Shader::load(device.clone())
-            .expect("failed to create fragment shader module!");
-
-        let dimensions = [swap_chain_extent[0] as f32, swap_chain_extent[1] as f32];
-        let viewport = Viewport {
-            origin: [0.0, 0.0],
-            dimensions,
-            depth_range: 0.0 .. 1.0,
-        };
-
-        Arc::new(GraphicsPipeline::start()
-            .vertex_input_single_buffer::<SimpleVertex>()
-            .vertex_shader(vert_shader_module.main_entry_point(), ())
-            .triangle_list()
-            .primitive_restart(false)
-            .viewports(vec![viewport]) // NOTE: also sets scissor to cover whole viewport
-            .fragment_shader(frag_shader_module.main_entry_point(), ())
-            .depth_clamp(false)
-            // NOTE: there's an outcommented .rasterizer_discard() in Vulkano...
-            .polygon_mode_fill() // = default
-            .line_width(1.0) // = default
-            .cull_mode_back()
-            .front_face_clockwise()
-            // NOTE: no depth_bias here, but on pipeline::raster::Rasterization
-            .blend_pass_through() // = default
-            .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-            .build(device.clone())
-            .unwrap()
-        )
-    }
-
-    pub fn draw_frame(&mut self) {
+    pub fn draw_frame(&mut self, buffer: &mut Vec<&mut DrawBuffer>) {
         let (image_index, acquire_future) = self.surface_context.acquire_next_image();
         
         self.framebuffer = self.framebuffers[image_index].clone();
@@ -253,9 +154,10 @@ impl VulkanoContext {
         self.create_command_buffer_self();
 
         unsafe {
-            let command_buffer = self.draw_subpass();
+            let command_buffer = buffer[0].draw_buffer(self.surface_context.dimensions());
             self.command_buffer =Some(self.command_buffer.take().unwrap().execute_commands(command_buffer).unwrap());
         }
+
         let command_buffer = self.command_buffer.take().unwrap().end_render_pass().unwrap().build().unwrap();
         let queue = self.surface_context.queue();
 
@@ -266,5 +168,13 @@ impl VulkanoContext {
             .then_signal_fence_and_flush()
             .unwrap();
         future.wait(None).unwrap();
+    }
+
+    pub fn queue(&self) -> Arc<Queue> {
+        self.queue.clone()
+    }
+
+    pub fn subpass(&self) -> Subpass<Arc<dyn RenderPassAbstract + Send + Sync>> {
+        Subpass::from(self.render_pass.clone(), 0).unwrap()
     }
 }

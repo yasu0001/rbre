@@ -1,24 +1,34 @@
-use core::shaderLib::simple::SimpleVertex;
+
+use core::draw_buffer::DrawBuffer;
+use core::draw_buffer::AutoCommandBuffer;
+
 use crate::object::abstruct_object::AbstructObject;
+use crate::application::Application;
+
+use std::sync::Arc;
 
 pub struct Triangle {
     pos: Vec<[f32;3]>,
-};
+    buffer: DrawBuffer,
+}
 
 impl Triangle {
-    pub fn init() -> Self {
+    pub fn new(app: &Application) -> Self {
+        let pos = vec![
+            [0.0, 0.0, 1.0],
+            [0.3, 0.1, 0.0], 
+            [0.3, 0.3, 0.0]
+        ];
+        let buffer =Self::init(app, &pos);
         Self {
-            pos
+            pos,
+            buffer
         }
     }
 }
 
 impl AbstructObject for Triangle {
-    fn init() -> Self {
-        let pos = vec![
-            [-0.5, -0.25, 0.0],
-            [0.0, 0.5, 0.0],
-            [0.25, -0.1],
-        ];
+    fn draw(&mut self) -> &mut DrawBuffer {
+        &mut self.buffer
     }
 }
