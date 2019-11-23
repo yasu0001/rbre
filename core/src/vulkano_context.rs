@@ -146,7 +146,7 @@ impl VulkanoContext {
                 vec![[1.0, 1.0, 1.0, 1.0].into(), 1.0f32.into()]).unwrap())
     }
 
-    pub fn draw_frame(&mut self, buffer: &mut Vec<&mut DrawBuffer>) {
+    pub fn draw_frame(&mut self, buffer: Vec<&DrawBuffer>) {
         let (image_index, acquire_future) = self.surface_context.acquire_next_image();
         
         self.framebuffer = self.framebuffers[image_index].clone();
@@ -154,8 +154,10 @@ impl VulkanoContext {
         self.create_command_buffer_self();
 
         unsafe {
-            let command_buffer = buffer[0].draw_buffer(self.surface_context.dimensions());
-            self.command_buffer =Some(self.command_buffer.take().unwrap().execute_commands(command_buffer).unwrap());
+            for b in buffer.iter() {
+                let command_buffer = b.draw_buffer(self.surface_context.dimensions());
+                self.command_buffer =Some(self.command_buffer.take().unwrap().execute_commands(command_buffer).unwrap());
+            }
         }
 
         let command_buffer = self.command_buffer.take().unwrap().end_render_pass().unwrap().build().unwrap();

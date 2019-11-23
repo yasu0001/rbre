@@ -9,5 +9,5 @@ pub trait AbstructObject {
     fn init(app: &Application, position: &Vec<[f32; 3]>) -> DrawBuffer where Self: Sized {
         DrawBuffer::new(app.vc.queue(), app.vc.subpass(), position)
     }
-    fn draw(&mut self) -> &mut DrawBuffer;
+    fn draw(&self) -> &DrawBuffer;
 }

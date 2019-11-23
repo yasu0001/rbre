@@ -4,7 +4,6 @@ pub struct SimpleVertex {
     position: [f32;3]
 }
 
-#[macro_use]
 vulkano::impl_vertex!(SimpleVertex, position);
 
 impl SimpleVertex {

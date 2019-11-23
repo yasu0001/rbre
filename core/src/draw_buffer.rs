@@ -72,7 +72,7 @@ impl DrawBuffer {
         }
     }
 
-    pub fn draw_buffer(&mut self, viewport_dimensions: [u32; 2]) -> AutoCommandBuffer {
+    pub fn draw_buffer(&self, viewport_dimensions: [u32; 2]) -> AutoCommandBuffer {
         AutoCommandBufferBuilder::secondary_graphics(
             self.gfx_queue.device().clone(),
             self.gfx_queue.family(),
